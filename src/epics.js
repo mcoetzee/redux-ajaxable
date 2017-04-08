@@ -57,16 +57,12 @@ function debounceIfTimeIsSet(action) {
 }
 
 function getAjaxResponse(action, ajax, action$) {
-  let responseType;
-  let failureType;
-  if (ajaxConfig.requestSuffix) {
-    const prefix = action.type.replace(new RegExp(ajaxConfig.requestSuffix + '$'), '');
-    responseType = prefix + ajaxConfig.successSuffix;
-    failureType = prefix + ajaxConfig.failureSuffix;
-  } else {
-    responseType = `${action.type}_${ajaxConfig.successSuffix}`;
-    failureType = `${action.type}_${ajaxConfig.failureSuffix}`;
-  }
+  const prefix = ajaxConfig.requestSuffix
+    ? action.type.replace(new RegExp(ajaxConfig.requestSuffix + '$'), '')
+    : (action.type + '_');
+
+  const responseType = prefix + ajaxConfig.successSuffix;
+  const failureType = prefix + ajaxConfig.failureSuffix;
 
   const responseMeta = action.meta ? { ...action.meta } : {};
   responseMeta.ajax = ajax;
