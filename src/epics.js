@@ -30,11 +30,11 @@ function ajaxEpic(action$) {
   return action$
     ::filter(action => action.ajax)
     ::groupBy(action => {
-      let group = getAjaxMetaProp(action, 'groupByUid');
+      let group = getAjaxMetaProp(action, 'groupUid');
       if (group) {
         return group;
       }
-      group = getAjaxMetaProp(action, 'groupById');
+      group = getAjaxMetaProp(action, 'group');
       return group ? `${action.type}/${group}` : action.type;
     })
     ::mergeMap(groupedAction$ => {
@@ -57,19 +57,7 @@ function debounceIfTimeIsSet(action) {
 }
 
 function getAjaxResponse(action, ajax, action$) {
-  const prefix = ajaxConfig.requestSuffix
-    ? action.type.replace(new RegExp(ajaxConfig.requestSuffix + '$'), '')
-    : (action.type + '_');
-
-  const responseType = prefix + ajaxConfig.successSuffix;
-  const failureType = prefix + ajaxConfig.failureSuffix;
-
-  const responseMeta = action.meta ? { ...action.meta } : {};
-  responseMeta.ajax = ajax;
-  if (action.payload) {
-    responseMeta.args = action.payload;
-  }
-
+  const responseMeta = getResponseMetadata(action, ajax);
   ajax = isString(ajax) ? { url: ajax, method: 'GET' } : ajax;
 
   const params = {
@@ -103,14 +91,18 @@ function getAjaxResponse(action, ajax, action$) {
     );
   }
 
+  const prefix = ajaxConfig.requestSuffix
+    ? action.type.replace(new RegExp(ajaxConfig.requestSuffix + '$'), '')
+    : (action.type + '_');
+
   return response$
     ::map(ajaxResponse => ({
-      type: responseType,
+      type: prefix + ajaxConfig.successSuffix,
       payload: ajaxResponse.response,
       meta: responseMeta
     }))
     .catch(err => of({
-      type: failureType,
+      type: prefix + ajaxConfig.failureSuffix,
       error: true,
       payload: { status: err.status },
       meta: responseMeta
@@ -123,6 +115,15 @@ function getAjaxMetaProp(action, prop) {
 
 function getMetaProp(ajax, prop) {
   return ajax.meta ? ajax.meta[prop] : undefined;
+}
+
+function getResponseMetadata(action, ajax) {
+  const responseMeta = action.meta ? { ...action.meta } : {};
+  responseMeta.ajax = ajax;
+  if (action.payload) {
+    responseMeta.args = action.payload;
+  }
+  return responseMeta;
 }
 
 function getQueryString(params) {

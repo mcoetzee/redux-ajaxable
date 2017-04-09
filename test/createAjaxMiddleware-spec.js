@@ -7,17 +7,19 @@ import nock from 'nock';
 global.XMLHttpRequest = require('xhr2');
 
 let store;
+let requests;
 describe('createAjaxMiddleware', () => {
   beforeEach(() => {
     const reducer = (state = [], action) => state.concat(action);
     const ajaxMiddleware = createAjaxMiddleware({ requestSuffix: 'REQUEST' });
     store = createStore(reducer, applyMiddleware(ajaxMiddleware));
+    requests = {};
   });
 
   afterEach(() => nock.cleanAll());
 
   it('should get', done => {
-    const req = nock('http://localhost:7000')
+    requests.request = nock('http://localhost:7000')
       .get('/api/foos')
       .reply(200, [{ id: 11 }]);
 
@@ -28,7 +30,7 @@ describe('createAjaxMiddleware', () => {
 
     setTimeout(
       () => {
-        expectToHaveMade(req);
+        expectToHaveMade('request');
 
         const actions = store.getState();
         expect(actions).to.deep.equal([
@@ -52,12 +54,12 @@ describe('createAjaxMiddleware', () => {
   });
 
   it('should debounce', done => {
-    const page1Request = nock('http://localhost:7000')
+    requests.page1Request = nock('http://localhost:7000')
       .get('/api/foos')
       .query({ page: 1 })
       .reply(200, [{ id: 11 }]);
 
-    const page2Request = nock('http://localhost:7000')
+    requests.page2Request = nock('http://localhost:7000')
       .get('/api/foos')
       .query({ page: 2 })
       .reply(200, [{ id: 21 }]);
@@ -86,8 +88,8 @@ describe('createAjaxMiddleware', () => {
 
     setTimeout(
       () => {
-        expectNotToHaveMade(page1Request);
-        expectToHaveMade(page2Request);
+        expectNotToHaveMade('page1Request');
+        expectToHaveMade('page2Request');
 
         const actions = store.getState();
         expect(actions).to.deep.equal([
@@ -133,13 +135,13 @@ describe('createAjaxMiddleware', () => {
   });
 
   it('should resolve latest', done => {
-    const page1Request = nock('http://localhost:7000')
+    requests.page1Request = nock('http://localhost:7000')
       .get('/api/foos')
       .delay(10)
       .query({ page: 1 })
       .reply(200, [{ id: 11 }]);
 
-    const page2Request = nock('http://localhost:7000')
+    requests.page2Request = nock('http://localhost:7000')
       .get('/api/foos')
       .delay(10)
       .query({ page: 2 })
@@ -169,8 +171,8 @@ describe('createAjaxMiddleware', () => {
 
     setTimeout(
       () => {
-        expectToHaveMade(page1Request);
-        expectToHaveMade(page2Request);
+        expectToHaveMade('page1Request');
+        expectToHaveMade('page2Request');
 
         const actions = store.getState();
         expect(actions).to.deep.equal([
@@ -216,15 +218,15 @@ describe('createAjaxMiddleware', () => {
   });
 
   it('should retry', done => {
-    const firstFailingRequest = nock('http://localhost:7000')
+    requests.firstFailingRequest = nock('http://localhost:7000')
       .post('/api/foos', { foo: { bar: 'shoot' } })
       .reply(500, 'Oops!');
 
-    const secondFailingRequest = nock('http://localhost:7000')
+    requests.secondFailingRequest = nock('http://localhost:7000')
       .post('/api/foos', { foo: { bar: 'shoot' } })
       .reply(500, 'Oops!');
 
-    const successfullRequest = nock('http://localhost:7000')
+    requests.successfullRequest = nock('http://localhost:7000')
       .post('/api/foos', { foo: { bar: 'shoot' } })
       .reply(200, { id: 21, bar: 'shot' });
 
@@ -241,9 +243,9 @@ describe('createAjaxMiddleware', () => {
 
     setTimeout(
       () => {
-        expectToHaveMade(firstFailingRequest);
-        expectToHaveMade(secondFailingRequest);
-        expectToHaveMade(successfullRequest);
+        expectToHaveMade('firstFailingRequest');
+        expectToHaveMade('secondFailingRequest');
+        expectToHaveMade('successfullRequest');
 
         const actions = store.getState();
         expect(actions).to.deep.equal([
@@ -279,15 +281,15 @@ describe('createAjaxMiddleware', () => {
   });
 
   it('should fail when retries are exhausted', done => {
-    const firstFailingRequest = nock('http://localhost:7000')
+    requests.firstFailingRequest = nock('http://localhost:7000')
       .post('/api/foos', { foo: { bar: 'shoot' } })
       .reply(500, 'Oops!');
 
-    const secondFailingRequest = nock('http://localhost:7000')
+    requests.secondFailingRequest = nock('http://localhost:7000')
       .post('/api/foos', { foo: { bar: 'shoot' } })
       .reply(500, 'Oops!');
 
-    const thirdRequest = nock('http://localhost:7000')
+    requests.thirdRequest = nock('http://localhost:7000')
       .post('/api/foos', { foo: { bar: 'shoot' } })
       .reply(200, { id: 21, bar: 'shot' });
 
@@ -304,9 +306,9 @@ describe('createAjaxMiddleware', () => {
 
     setTimeout(
       () => {
-        expectToHaveMade(firstFailingRequest);
-        expectToHaveMade(secondFailingRequest);
-        expectNotToHaveMade(thirdRequest);
+        expectToHaveMade('firstFailingRequest');
+        expectToHaveMade('secondFailingRequest');
+        expectNotToHaveMade('thirdRequest');
 
         const actions = store.getState();
         expect(actions).to.deep.equal([
@@ -343,7 +345,7 @@ describe('createAjaxMiddleware', () => {
   });
 
   it('should timeout', done => {
-    const timeoutRequest = nock('http://localhost:7000')
+    requests.timeoutRequest = nock('http://localhost:7000')
       .post('/api/foos', { foo: { bar: 'shoot' } })
       .socketDelay(20)
       .reply(200, {});
@@ -360,7 +362,7 @@ describe('createAjaxMiddleware', () => {
 
     setTimeout(
       () => {
-        expectToHaveMade(timeoutRequest);
+        expectToHaveMade('timeoutRequest');
 
         const actions = store.getState();
         expect(actions).to.deep.equal([
@@ -395,7 +397,7 @@ describe('createAjaxMiddleware', () => {
   });
 
   it('should cancel', done => {
-    const slowRequest = nock('http://localhost:7000')
+    requests.slowRequest = nock('http://localhost:7000')
       .post('/api/foos', { foo: { bar: 'shoot' } })
       .socketDelay(20)
       .reply(200, {});
@@ -406,7 +408,7 @@ describe('createAjaxMiddleware', () => {
         url: 'http://localhost:7000/api/foos',
         method: 'POST',
         data: { foo: { bar: 'shoot' } },
-        meta: { 
+        meta: {
           cancelType: 'FOO_REQUEST_CANCELLATION'
         }
       }
@@ -416,7 +418,7 @@ describe('createAjaxMiddleware', () => {
 
     setTimeout(
       () => {
-        expectToHaveMade(slowRequest);
+        expectToHaveMade('slowRequest');
 
         const actions = store.getState();
         expect(actions).to.deep.equal([
@@ -427,7 +429,7 @@ describe('createAjaxMiddleware', () => {
               url: 'http://localhost:7000/api/foos',
               method: 'POST',
               data: { foo: { bar: 'shoot' } },
-              meta: { 
+              meta: {
                 cancelType: 'FOO_REQUEST_CANCELLATION'
               }
             }
@@ -440,16 +442,142 @@ describe('createAjaxMiddleware', () => {
     );
   });
 
+  it('should group within action types', done => {
+    requests.group1Request = nock('http://localhost:7000')
+      .get('/api/foos/42')
+      .reply(200, { id: 42, t: 1 });
+
+    requests.group2Request = nock('http://localhost:7000')
+      .get('/api/foos/84')
+      .reply(200, { id: 84, t: 1 });
+
+    requests.otherGroup1Request = nock('http://localhost:7000')
+      .get('/api/foos/42')
+      .reply(200, { id: 42, t: 2 });
+
+    store.dispatch({
+      type: 'FOO_REQUEST',
+      ajax: {
+        url: 'http://localhost:7000/api/foos/42',
+        method: 'GET',
+        meta: {
+          group: 42,
+          debounce: 10
+        }
+      }
+    });
+
+    store.dispatch({
+      type: 'FOO_REQUEST',
+      ajax: {
+        url: 'http://localhost:7000/api/foos/84',
+        method: 'GET',
+        meta: {
+          group: 84,
+          debounce: 10
+        }
+      }
+    });
+
+    store.dispatch({
+      type: 'FOO_REQUEST',
+      ajax: {
+        url: 'http://localhost:7000/api/foos/42',
+        method: 'GET',
+        meta: {
+          group: 42,
+          debounce: 10
+        }
+      }
+    });
+
+    setTimeout(
+      () => {
+        expectToHaveMade('group2Request');
+        expectToHaveMade('group1Request');
+        expectNotToHaveMade('otherGroup1Request');
+
+        const actions = store.getState();
+        expect(actions).to.deep.equal([
+          { type: '@@redux/INIT' },
+          {
+            type: 'FOO_REQUEST',
+            ajax: {
+              url: 'http://localhost:7000/api/foos/42',
+              method: 'GET',
+              meta: {
+                group: 42,
+                debounce: 10
+              }
+            }
+          },
+          {
+            type: 'FOO_REQUEST',
+            ajax: {
+              url: 'http://localhost:7000/api/foos/84',
+              method: 'GET',
+              meta: {
+                group: 84,
+                debounce: 10
+              }
+            }
+          },
+          {
+            type: 'FOO_REQUEST',
+            ajax: {
+              url: 'http://localhost:7000/api/foos/42',
+              method: 'GET',
+              meta: {
+                group: 42,
+                debounce: 10
+              }
+            }
+          },
+          {
+            type: 'FOO_SUCCESS',
+            payload: { id: 84, t: 1 },
+            meta: {
+              ajax: {
+                url: 'http://localhost:7000/api/foos/84',
+                method: 'GET',
+                meta: {
+                  group: 84,
+                  debounce: 10
+                }
+              }
+            }
+          },
+          {
+            type: 'FOO_SUCCESS',
+            payload: { id: 42, t: 1 },
+            meta: {
+              ajax: {
+                url: 'http://localhost:7000/api/foos/42',
+                method: 'GET',
+                meta: {
+                  group: 42,
+                  debounce: 10
+                }
+              }
+            }
+          },
+        ]);
+        done();
+      },
+      30
+    );
+  });
+
   it('should group by unique id across different action types', done => {
-    const group1AddRequest = nock('http://localhost:7000')
+    requests.group1AddRequest = nock('http://localhost:7000')
       .post('/api/foos/42/bars', { bar_id: 21 })
       .reply(200, { id: 42, bar_ids: [21] });
 
-    const group1RemoveRequest = nock('http://localhost:7000')
+    requests.group1RemoveRequest = nock('http://localhost:7000')
       .delete('/api/foos/42/bars/21')
       .reply(204);
 
-    const group2RemoveRequest = nock('http://localhost:7000')
+    requests.group2RemoveRequest = nock('http://localhost:7000')
       .delete('/api/foos/42/bars/22')
       .reply(204);
 
@@ -459,8 +587,8 @@ describe('createAjaxMiddleware', () => {
         url: 'http://localhost:7000/api/foos/42/bars',
         method: 'POST',
         data: { bar_id: 21 },
-        meta: { 
-          groupByUid: 'bar-21',
+        meta: {
+          groupUid: 'bar-21',
           debounce: 10
         }
       }
@@ -471,8 +599,8 @@ describe('createAjaxMiddleware', () => {
       ajax: {
         url: 'http://localhost:7000/api/foos/42/bars/21',
         method: 'DELETE',
-        meta: { 
-          groupByUid: 'bar-21',
+        meta: {
+          groupUid: 'bar-21',
           debounce: 10
         }
       }
@@ -483,8 +611,8 @@ describe('createAjaxMiddleware', () => {
       ajax: {
         url: 'http://localhost:7000/api/foos/42/bars/22',
         method: 'DELETE',
-        meta: { 
-          groupByUid: 'bar-22',
+        meta: {
+          groupUid: 'bar-22',
           debounce: 10
         }
       }
@@ -492,9 +620,9 @@ describe('createAjaxMiddleware', () => {
 
     setTimeout(
       () => {
-        expectNotToHaveMade(group1AddRequest);
-        expectToHaveMade(group1RemoveRequest);
-        expectToHaveMade(group2RemoveRequest);
+        expectNotToHaveMade('group1AddRequest');
+        expectToHaveMade('group1RemoveRequest');
+        expectToHaveMade('group2RemoveRequest');
 
         const actions = store.getState();
         expect(actions).to.deep.equal([
@@ -505,8 +633,8 @@ describe('createAjaxMiddleware', () => {
               url: 'http://localhost:7000/api/foos/42/bars',
               method: 'POST',
               data: { bar_id: 21 },
-              meta: { 
-                groupByUid: 'bar-21',
+              meta: {
+                groupUid: 'bar-21',
                 debounce: 10
               }
             }
@@ -516,8 +644,8 @@ describe('createAjaxMiddleware', () => {
             ajax: {
               url: 'http://localhost:7000/api/foos/42/bars/21',
               method: 'DELETE',
-              meta: { 
-                groupByUid: 'bar-21',
+              meta: {
+                groupUid: 'bar-21',
                 debounce: 10
               }
             }
@@ -527,8 +655,8 @@ describe('createAjaxMiddleware', () => {
             ajax: {
               url: 'http://localhost:7000/api/foos/42/bars/22',
               method: 'DELETE',
-              meta: { 
-                groupByUid: 'bar-22',
+              meta: {
+                groupUid: 'bar-22',
                 debounce: 10
               }
             }
@@ -540,8 +668,8 @@ describe('createAjaxMiddleware', () => {
               ajax: {
                 url: 'http://localhost:7000/api/foos/42/bars/21',
                 method: 'DELETE',
-                meta: { 
-                  groupByUid: 'bar-21',
+                meta: {
+                  groupUid: 'bar-21',
                   debounce: 10
                 }
               }
@@ -554,8 +682,8 @@ describe('createAjaxMiddleware', () => {
               ajax: {
                 url: 'http://localhost:7000/api/foos/42/bars/22',
                 method: 'DELETE',
-                meta: { 
-                  groupByUid: 'bar-22',
+                meta: {
+                  groupUid: 'bar-22',
                   debounce: 10
                 }
               }
@@ -570,9 +698,9 @@ describe('createAjaxMiddleware', () => {
 });
 
 function expectToHaveMade(req) {
-  req.done();
+  expect(requests[req].isDone()).to.eq(true, req + ' should have been made');
 }
 
 function expectNotToHaveMade(req) {
-  expect(req.isDone()).to.eq(false);
+  expect(requests[req].isDone()).to.eq(false, req + ' should not have been made');
 }
