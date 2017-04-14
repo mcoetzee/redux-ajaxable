@@ -41,22 +41,31 @@ function ajaxEpic(action$) {
       return merge(
         groupedAction$
           ::filter(action => getAjaxMetaProp(action, 'resolve') === 'LATEST')
+          ::map(scrubAjaxActionOfImpurities)
           ::debounce(debounceIfTimeIsSet)
-          ::switchMap(action => getAjaxResponse(action, action.ajax, action$)),
+          ::switchMap(({ action, callback }) => getAjaxResponse(action, callback, action$)),
         groupedAction$
           ::filter(action => getAjaxMetaProp(action, 'resolve') !== 'LATEST')
+          ::map(scrubAjaxActionOfImpurities)
           ::debounce(debounceIfTimeIsSet)
-          ::mergeMap(action => getAjaxResponse(action, action.ajax, action$))
+          ::mergeMap(({ action, callback }) => getAjaxResponse(action, callback, action$))
       );
     });
 }
 
-function debounceIfTimeIsSet(action) {
+function scrubAjaxActionOfImpurities(action) {
+  const callback = action.ajax.response;
+  delete action.ajax.response;
+  return { action, callback };
+}
+
+function debounceIfTimeIsSet({ action }) {
   const debounceTime = getAjaxMetaProp(action, 'debounce');
   return debounceTime ? timer(debounceTime) : empty();
 }
 
-function getAjaxResponse(action, ajax, action$) {
+function getAjaxResponse(action, callback, action$) {
+  let { ajax } = action;
   const responseMeta = getResponseMetadata(action, ajax);
   ajax = isString(ajax) ? { url: ajax, method: 'GET' } : ajax;
 
@@ -96,9 +105,9 @@ function getAjaxResponse(action, ajax, action$) {
     : (action.type + '_');
 
   return response$
-    ::map(ajaxResponse => ({
+    ::map(({ response }) => ({
       type: prefix + ajaxConfig.successSuffix,
-      payload: ajaxResponse.response,
+      payload: callback ? callback(response) : response,
       meta: responseMeta
     }))
     .catch(err => of({

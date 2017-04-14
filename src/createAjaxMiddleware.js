@@ -8,9 +8,8 @@ export function createAjaxMiddleware(config) {
   return middlewareApi => next => {
     ajaxEpic(action$).subscribe(middlewareApi.dispatch);
     return action => {
-      const result = next(action);
       action$.next(action);
-      return result;
+      return next(action);
     };
   };
 }

@@ -53,6 +53,54 @@ describe('createAjaxMiddleware', () => {
     );
   });
 
+  it('should handle failures', done => {
+    requests.failingRequest = nock('http://localhost:7000')
+      .patch('/api/foos/11', { foo: { bar: 'shot' } })
+      .reply(401);
+
+    store.dispatch({
+      type: 'FOO_REQUEST',
+      ajax: {
+        url: 'http://localhost:7000/api/foos/11',
+        method: 'PATCH',
+        data: { foo: { bar: 'shot' } }
+      }
+    });
+
+    setTimeout(
+      () => {
+        expectToHaveMade('failingRequest');
+
+        const actions = store.getState();
+        expect(actions).to.deep.equal([
+          { type: '@@redux/INIT' },
+          {
+            type: 'FOO_REQUEST',
+            ajax: {
+              url: 'http://localhost:7000/api/foos/11',
+              method: 'PATCH',
+              data: { foo: { bar: 'shot' } }
+            }
+          },
+          {
+            type: 'FOO_FAILURE',
+            error: true,
+            payload: { status: 401 },
+            meta: {
+              ajax: {
+                url: 'http://localhost:7000/api/foos/11',
+                method: 'PATCH',
+                data: { foo: { bar: 'shot' } }
+              }
+            }
+          }
+        ]);
+        done();
+      },
+      20
+    );
+  });
+
   it('should debounce', done => {
     requests.page1Request = nock('http://localhost:7000')
       .get('/api/foos')
@@ -693,6 +741,53 @@ describe('createAjaxMiddleware', () => {
         done();
       },
       30
+    );
+  });
+
+  it('should handle response callback', done => {
+    requests.request = nock('http://localhost:7000')
+      .get('/api/foos')
+      .reply(200, [{ id: 11 }]);
+
+    store.dispatch({
+      type: 'FOO_REQUEST',
+      ajax: {
+        url: 'http://localhost:7000/api/foos',
+        method: 'GET',
+        response(foos) {
+          return foos.map(foo => ({ ...foo, processed: true }));
+        }
+      }
+    });
+
+    setTimeout(
+      () => {
+        expectToHaveMade('request');
+
+        const actions = store.getState();
+        expect(actions).to.deep.equal([
+          { type: '@@redux/INIT' },
+          {
+            type: 'FOO_REQUEST',
+            ajax: {
+              url: 'http://localhost:7000/api/foos',
+              method: 'GET',
+            }
+          },
+          {
+            type: 'FOO_SUCCESS',
+            payload: [{ id: 11, processed: true }],
+            meta: {
+              ajax: {
+                url: 'http://localhost:7000/api/foos',
+                method: 'GET',
+              }
+            }
+          }
+        ]);
+        done();
+      },
+      20
     );
   });
 });
