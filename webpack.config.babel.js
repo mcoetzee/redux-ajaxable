@@ -1,5 +1,6 @@
 import webpack from 'webpack';
 import webpackRxjsExternals from 'webpack-rxjs-externals';
+import CompressionPlugin from 'compression-webpack-plugin';
 
 const env = process.env.NODE_ENV;
 
@@ -39,6 +40,13 @@ if (env === 'production') {
         unsafe_comps: true,
         warnings: false
       }
+    }),
+    new CompressionPlugin({
+      asset: '[path].gz[query]',
+      algorithm: 'gzip',
+      test: /\.js$|\.map$/,
+      threshold: 10240,
+      minRatio: 0.8
     })
   );
 }

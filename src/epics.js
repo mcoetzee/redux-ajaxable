@@ -14,15 +14,21 @@ import { timer } from 'rxjs/observable/timer';
 import { empty } from 'rxjs/observable/empty';
 import { ajax as ajaxObservable } from 'rxjs/observable/dom/ajax';
 
+import stringify from 'qs/lib/stringify';
+
 let ajaxConfig;
+let encodingConfig;
 const defaultConfig = {
-  requestSuffix: '',
+  requestSuffix: 'REQUEST',
   successSuffix: 'SUCCESS',
   failureSuffix: 'FAILURE',
+  urlEncoder: stringify,
+  arrayFormat: 'indices',
 };
 
 export function createAjaxEpic(config) {
   ajaxConfig = config ? { ...defaultConfig, ...config } : defaultConfig;
+  encodingConfig = { arrayFormat: ajaxConfig.arrayFormat };
   return ajaxEpic;
 }
 
@@ -83,7 +89,7 @@ function getAjaxResponse(action, callback, action$) {
   if (params.method !== 'GET') {
     params.body = ajax.data;
   } else if (ajax.data) {
-    params.url += '?' + getQueryString(ajax.data);
+    params.url += '?' + ajaxConfig.urlEncoder(ajax.data, encodingConfig);
   }
 
   let response$ = ajaxObservable(params);
@@ -130,15 +136,9 @@ function getResponseMetadata(action, ajax) {
   const responseMeta = action.meta ? { ...action.meta } : {};
   responseMeta.ajax = ajax;
   if (action.payload) {
-    responseMeta.args = action.payload;
+    responseMeta.payload = action.payload;
   }
   return responseMeta;
-}
-
-function getQueryString(params) {
-  return Object.keys(params)
-    .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))
-    .join('&');
 }
 
 function isString(data) {

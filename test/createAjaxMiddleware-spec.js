@@ -18,7 +18,7 @@ describe('createAjaxMiddleware', () => {
 
   afterEach(() => nock.cleanAll());
 
-  it('should get', done => {
+  it('should make GET requests', done => {
     requests.request = nock('http://localhost:7000')
       .get('/api/foos')
       .reply(200, [{ id: 11 }]);
@@ -44,6 +44,236 @@ describe('createAjaxMiddleware', () => {
             payload: [{ id: 11 }],
             meta: {
               ajax: 'http://localhost:7000/api/foos'
+            }
+          }
+        ]);
+        done();
+      },
+      20
+    );
+  });
+
+  it('should transform GET request data into query string params', done => {
+    requests.getRequest = nock('http://localhost:7000')
+      .get('/api/foos')
+      .query({ bar_ids: [21, 31] })
+      .reply(200, [{ id: 11, bar_id: 21 }]);
+
+    store.dispatch({
+      type: 'FOO_REQUEST',
+      ajax: {
+        url: 'http://localhost:7000/api/foos',
+        method: 'GET',
+        data: { bar_ids: [21, 31] }
+      }
+    });
+
+    setTimeout(
+      () => {
+        expectToHaveMade('getRequest');
+
+        const actions = store.getState();
+        expect(actions).to.deep.equal([
+          { type: '@@redux/INIT' },
+          {
+            type: 'FOO_REQUEST',
+            ajax: {
+              url: 'http://localhost:7000/api/foos',
+              method: 'GET',
+              data: { bar_ids: [21, 31] }
+            }
+          },
+          {
+            type: 'FOO_SUCCESS',
+            payload: [{ id: 11, bar_id: 21 }],
+            meta: {
+              ajax: {
+                url: 'http://localhost:7000/api/foos',
+                method: 'GET',
+                data: { bar_ids: [21, 31] }
+              }
+            }
+          }
+        ]);
+        done();
+      },
+      20
+    );
+  });
+
+  it('should make POST requests', done => {
+    requests.postRequest = nock('http://localhost:7000')
+      .post('/api/foos', { foo: 'bar' })
+      .reply(200, [{ id: 11 }]);
+
+    store.dispatch({
+      type: 'FOO_REQUEST',
+      ajax: {
+        url: 'http://localhost:7000/api/foos',
+        method: 'POST',
+        data: { foo: 'bar' }
+      }
+    });
+
+    setTimeout(
+      () => {
+        expectToHaveMade('postRequest');
+
+        const actions = store.getState();
+        expect(actions).to.deep.equal([
+          { type: '@@redux/INIT' },
+          {
+            type: 'FOO_REQUEST',
+            ajax: {
+              url: 'http://localhost:7000/api/foos',
+              method: 'POST',
+              data: { foo: 'bar' }
+            }
+          },
+          {
+            type: 'FOO_SUCCESS',
+            payload: [{ id: 11 }],
+            meta: {
+              ajax: {
+                url: 'http://localhost:7000/api/foos',
+                method: 'POST',
+                data: { foo: 'bar' }
+              }
+            }
+          }
+        ]);
+        done();
+      },
+      20
+    );
+  });
+
+  it('should make PATCH requests', done => {
+    requests.patchRequest = nock('http://localhost:7000')
+      .patch('/api/foos/11', { foo: 'bar' })
+      .reply(200, [{ id: 11 }]);
+
+    store.dispatch({
+      type: 'FOO_REQUEST',
+      ajax: {
+        url: 'http://localhost:7000/api/foos/11',
+        method: 'PATCH',
+        data: { foo: 'bar' }
+      }
+    });
+
+    setTimeout(
+      () => {
+        expectToHaveMade('patchRequest');
+
+        const actions = store.getState();
+        expect(actions).to.deep.equal([
+          { type: '@@redux/INIT' },
+          {
+            type: 'FOO_REQUEST',
+            ajax: {
+              url: 'http://localhost:7000/api/foos/11',
+              method: 'PATCH',
+              data: { foo: 'bar' }
+            }
+          },
+          {
+            type: 'FOO_SUCCESS',
+            payload: [{ id: 11 }],
+            meta: {
+              ajax: {
+                url: 'http://localhost:7000/api/foos/11',
+                method: 'PATCH',
+                data: { foo: 'bar' }
+              }
+            }
+          }
+        ]);
+        done();
+      },
+      20
+    );
+  });
+
+  it('should make PUT requests', done => {
+    requests.putRequest = nock('http://localhost:7000')
+      .put('/api/foos/11/bar')
+      .reply(204);
+
+    store.dispatch({
+      type: 'FOO_REQUEST',
+      ajax: {
+        url: 'http://localhost:7000/api/foos/11/bar',
+        method: 'PUT',
+      }
+    });
+
+    setTimeout(
+      () => {
+        expectToHaveMade('putRequest');
+
+        const actions = store.getState();
+        expect(actions).to.deep.equal([
+          { type: '@@redux/INIT' },
+          {
+            type: 'FOO_REQUEST',
+            ajax: {
+              url: 'http://localhost:7000/api/foos/11/bar',
+              method: 'PUT',
+            }
+          },
+          {
+            type: 'FOO_SUCCESS',
+            payload: null,
+            meta: {
+              ajax: {
+                url: 'http://localhost:7000/api/foos/11/bar',
+                method: 'PUT',
+              }
+            }
+          }
+        ]);
+        done();
+      },
+      20
+    );
+  });
+
+  it('should make DELETE requests', done => {
+    requests.deleteRequest = nock('http://localhost:7000')
+      .delete('/api/foos/11/bar')
+      .reply(204);
+
+    store.dispatch({
+      type: 'FOO_REQUEST',
+      ajax: {
+        url: 'http://localhost:7000/api/foos/11/bar',
+        method: 'DELETE',
+      }
+    });
+
+    setTimeout(
+      () => {
+        expectToHaveMade('deleteRequest');
+
+        const actions = store.getState();
+        expect(actions).to.deep.equal([
+          { type: '@@redux/INIT' },
+          {
+            type: 'FOO_REQUEST',
+            ajax: {
+              url: 'http://localhost:7000/api/foos/11/bar',
+              method: 'DELETE',
+            }
+          },
+          {
+            type: 'FOO_SUCCESS',
+            payload: null,
+            meta: {
+              ajax: {
+                url: 'http://localhost:7000/api/foos/11/bar',
+                method: 'DELETE',
+              }
             }
           }
         ]);
