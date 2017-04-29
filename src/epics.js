@@ -49,20 +49,33 @@ function ajaxEpic(action$) {
           ::filter(action => getAjaxMetaProp(action, 'resolve') === 'LATEST')
           ::map(scrubAjaxActionOfImpurities)
           ::debounce(debounceIfTimeIsSet)
-          ::switchMap(({ action, callback }) => getAjaxResponse(action, callback, action$)),
+          ::switchMap(({ action, callbacks }) => getAjaxResponse(action, callbacks, action$)),
         groupedAction$
           ::filter(action => getAjaxMetaProp(action, 'resolve') !== 'LATEST')
           ::map(scrubAjaxActionOfImpurities)
           ::debounce(debounceIfTimeIsSet)
-          ::mergeMap(({ action, callback }) => getAjaxResponse(action, callback, action$))
+          ::mergeMap(({ action, callbacks }) => getAjaxResponse(action, callbacks, action$))
       );
     });
 }
 
+const completeKey = '_onCompleteForFSAAToolsOnly';
+const errorKey = '_onErrorForFSAAToolsOnly';
 function scrubAjaxActionOfImpurities(action) {
-  const callback = action.ajax.response;
-  delete action.ajax.response;
-  return { action, callback };
+  const callbacks = {};
+  if (action.ajax.response) {
+    callbacks.response = action.ajax.response;
+    delete action.ajax.response;
+  }
+  if (action.ajax[completeKey]) {
+    callbacks.onComplete = action.ajax[completeKey];
+    delete action.ajax[completeKey];
+  }
+  if (action.ajax[errorKey]) {
+    callbacks.onError = action.ajax[errorKey];
+    delete action.ajax[errorKey];
+  }
+  return { action, callbacks };
 }
 
 function debounceIfTimeIsSet({ action }) {
@@ -70,29 +83,9 @@ function debounceIfTimeIsSet({ action }) {
   return debounceTime ? timer(debounceTime) : empty();
 }
 
-function getAjaxResponse(action, callback, action$) {
-  let { ajax } = action;
-  const responseMeta = getResponseMetadata(action, ajax);
-  ajax = isString(ajax) ? { url: ajax, method: 'GET' } : ajax;
-
-  const params = {
-    method: ajax.method,
-    url: ajax.url,
-    headers: ajax.headers || {},
-    timeout: getMetaProp(ajax, 'timeout') || 0
-  };
-
-  if (!params.headers['Content-Type']) {
-    params.headers['Content-Type'] = 'application/json; charset=UTF-8';
-  }
-
-  if (params.method !== 'GET') {
-    params.body = ajax.data;
-  } else if (ajax.data) {
-    params.url += '?' + ajaxConfig.urlEncoder(ajax.data, encodingConfig);
-  }
-
-  let response$ = ajaxObservable(params);
+function getAjaxResponse(action, callbacks, action$) {
+  const { ajax } = action;
+  let response$ = ajaxObservable(getRequest(ajax));
 
   const retryCount = getMetaProp(ajax, 'retry');
   if (retryCount) {
@@ -100,7 +93,7 @@ function getAjaxResponse(action, callback, action$) {
   }
 
   const cancelType = getMetaProp(ajax, 'cancelType');
-  if (action$ && cancelType) {
+  if (cancelType) {
     response$ = response$::takeUntil(
       action$::filter(a => a.type === cancelType)
     );
@@ -110,18 +103,73 @@ function getAjaxResponse(action, callback, action$) {
     ? action.type.replace(new RegExp(ajaxConfig.requestSuffix + '$'), '')
     : (action.type + '_');
 
+  const responseMeta = getResponseMetadata(action, ajax);
+
   return response$
-    ::map(({ response }) => ({
-      type: prefix + ajaxConfig.successSuffix,
-      payload: callback ? callback(response) : response,
-      meta: responseMeta
-    }))
-    .catch(err => of({
-      type: prefix + ajaxConfig.failureSuffix,
-      error: true,
-      payload: { status: err.status },
-      meta: responseMeta
-    }));
+    ::map(({ response }) => {
+      const res = callbacks.response ? callbacks.response(response) : response;
+      if (callbacks.onComplete) {
+        callbacks.onComplete(res);
+      }
+      return {
+        type: prefix + ajaxConfig.successSuffix,
+        payload: res,
+        meta: responseMeta
+      };
+    })
+    .catch(err => {
+      const res = { status: err.status };
+      if (callbacks.onError) {
+        callbacks.onError(res);
+      }
+      return of({
+        type: prefix + ajaxConfig.failureSuffix,
+        error: true,
+        payload: res,
+        meta: responseMeta
+      });
+    });
+}
+
+function getRequest(ajax) {
+  ajax = isString(ajax) ? { url: ajax, method: 'GET' } : ajax;
+
+  const request = {
+    method: ajax.method,
+    url: ajax.url,
+    headers: ajax.headers ? { ...ajax.headers } : {},
+    timeout: getMetaProp(ajax, 'timeout') || 0,
+    responseType: ajax.responseType || 'json',
+    crossDomain: ajax.crossDomain || false,
+    withCredentials: ajax.withCredentials || false,
+  };
+
+  if (request.method !== 'GET') {
+    request.body = ajax.data;
+  } else if (ajax.data) {
+    request.url += '?' + ajaxConfig.urlEncoder(ajax.data, encodingConfig);
+  }
+
+  if (!request.headers['Content-Type']) {
+    request.headers['Content-Type'] = 'application/json; charset=UTF-8';
+  }
+
+  if (ajax.username) {
+    request.user = ajax.username;
+  }
+  if (ajax.password) {
+    request.password = ajax.password;
+  }
+
+  return request;
+}
+
+function getResponseMetadata(action, ajax) {
+  const responseMeta = { ajax };
+  if (action.payload) {
+    responseMeta.payload = action.payload;
+  }
+  return responseMeta;
 }
 
 function getAjaxMetaProp(action, prop) {
@@ -130,15 +178,6 @@ function getAjaxMetaProp(action, prop) {
 
 function getMetaProp(ajax, prop) {
   return ajax.meta ? ajax.meta[prop] : undefined;
-}
-
-function getResponseMetadata(action, ajax) {
-  const responseMeta = action.meta ? { ...action.meta } : {};
-  responseMeta.ajax = ajax;
-  if (action.payload) {
-    responseMeta.payload = action.payload;
-  }
-  return responseMeta;
 }
 
 function isString(data) {

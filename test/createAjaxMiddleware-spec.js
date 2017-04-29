@@ -1,9 +1,12 @@
 /* globals describe it beforeEach afterEach */
-import { expect } from 'chai';
+import chai, { expect } from 'chai';
+import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+import nock from 'nock';
 import { createStore, applyMiddleware } from 'redux';
 import { createAjaxMiddleware } from '../';
-import nock from 'nock';
 
+chai.use(sinonChai);
 global.XMLHttpRequest = require('xhr2');
 
 let store;
@@ -13,10 +16,14 @@ describe('createAjaxMiddleware', () => {
     const reducer = (state = [], action) => state.concat(action);
     const ajaxMiddleware = createAjaxMiddleware({ requestSuffix: 'REQUEST' });
     store = createStore(reducer, applyMiddleware(ajaxMiddleware));
+    nock.disableNetConnect();
     requests = {};
   });
 
-  afterEach(() => nock.cleanAll());
+  afterEach(() => {
+    nock.cleanAll();
+    nock.enableNetConnect();
+  });
 
   it('should make GET requests', done => {
     requests.request = nock('http://localhost:7000')
@@ -53,7 +60,7 @@ describe('createAjaxMiddleware', () => {
     );
   });
 
-  it('should transform GET request data into query string params', done => {
+  it('should encode GET request data into query string params', done => {
     requests.getRequest = nock('http://localhost:7000')
       .get('/api/foos')
       .query({ bar_ids: [21, 31] })
@@ -974,7 +981,7 @@ describe('createAjaxMiddleware', () => {
     );
   });
 
-  it('should handle response callback', done => {
+  it('should provide response callback', done => {
     requests.request = nock('http://localhost:7000')
       .get('/api/foos')
       .reply(200, [{ id: 11 }]);
@@ -1015,6 +1022,66 @@ describe('createAjaxMiddleware', () => {
             }
           }
         ]);
+        done();
+      },
+      20
+    );
+  });
+
+  it('should provide on complete callback for FSAA tools', done => {
+    requests.request = nock('http://localhost:7000')
+      .get('/api/foos')
+      .reply(200, [{ id: 11 }]);
+
+    const onCompleteSpy = sinon.spy();
+    const onErrorSpy = sinon.spy();
+    store.dispatch({
+      type: 'FOO_REQUEST',
+      ajax: {
+        url: 'http://localhost:7000/api/foos',
+        method: 'GET',
+
+        _onCompleteForFSAAToolsOnly: onCompleteSpy,
+        _onErrorForFSAAToolsOnly: onErrorSpy
+      }
+    });
+
+    setTimeout(
+      () => {
+        expectToHaveMade('request');
+        expect(onCompleteSpy).to.have.been.calledWith([{ id: 11 }]);
+        // eslint-disable-next-line no-unused-expressions
+        expect(onErrorSpy).not.to.have.been.called;
+        done();
+      },
+      20
+    );
+  });
+
+  it('should provide on error callback for FSAA tools', done => {
+    requests.request = nock('http://localhost:7000')
+      .get('/api/foos')
+      .reply(500);
+
+    const onCompleteSpy = sinon.spy();
+    const onErrorSpy = sinon.spy();
+    store.dispatch({
+      type: 'FOO_REQUEST',
+      ajax: {
+        url: 'http://localhost:7000/api/foos',
+        method: 'GET',
+
+        _onCompleteForFSAAToolsOnly: onCompleteSpy,
+        _onErrorForFSAAToolsOnly: onErrorSpy
+      }
+    });
+
+    setTimeout(
+      () => {
+        expectToHaveMade('request');
+        expect(onErrorSpy).to.have.been.calledWith({ status: 500 });
+        // eslint-disable-next-line no-unused-expressions
+        expect(onCompleteSpy).not.to.have.been.called;
         done();
       },
       20
