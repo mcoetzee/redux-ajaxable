@@ -32,7 +32,10 @@ describe('createAjaxMiddleware', () => {
 
     store.dispatch({
       type: 'FOO_REQUEST',
-      ajax: 'http://localhost:7000/api/foos'
+      ajax: {
+        url: 'http://localhost:7000/api/foos',
+        method: 'GET'
+      }
     });
 
     setTimeout(
@@ -44,13 +47,19 @@ describe('createAjaxMiddleware', () => {
           { type: '@@redux/INIT' },
           {
             type: 'FOO_REQUEST',
-            ajax: 'http://localhost:7000/api/foos'
+            ajax: {
+              url: 'http://localhost:7000/api/foos',
+              method: 'GET'
+            }
           },
           {
             type: 'FOO_SUCCESS',
             payload: [{ id: 11 }],
             meta: {
-              ajax: 'http://localhost:7000/api/foos'
+              ajax: {
+                url: 'http://localhost:7000/api/foos',
+                method: 'GET'
+              }
             }
           }
         ]);
@@ -1085,6 +1094,131 @@ describe('createAjaxMiddleware', () => {
         done();
       },
       20
+    );
+  });
+
+  it('should chain multiple requests together', done => {
+    requests.firstRequest = nock('http://localhost:7000')
+      .get('/api/foos')
+      .query({ page: 1 })
+      .reply(200, { id: 'first-req-response' });
+
+    requests.secondRequest = nock('http://localhost:7000')
+      .get('/api/foos')
+      .query({ id: 'first-req-response', page: 2 })
+      .reply(200, { id: 'second-req-response' });
+
+    requests.thirdRequest = nock('http://localhost:7000')
+      .get('/api/foos')
+      .query({ id: 'second-req-response', page: 3 })
+      .reply(200, { id: 'third-req-response' });
+
+    store.dispatch({
+      type: 'FIRST_FOO_REQUEST',
+      ajax: {
+        url: 'http://localhost:7000/api/foos',
+        method: 'GET',
+        data: { page: 1 },
+
+        chain: [
+          res => fetchSecondFoo(res.id),
+          res => fetchThirdFoo(res.id)
+        ]
+      }
+    });
+
+    function fetchSecondFoo(id) {
+      return {
+        type: 'SECOND_FOO_REQUEST',
+        ajax: {
+          url: 'http://localhost:7000/api/foos',
+          method: 'GET',
+          data: { id, page: 2 }
+        }
+      };
+    }
+
+    function fetchThirdFoo(id) {
+      return {
+        type: 'THIRD_FOO_REQUEST',
+        ajax: {
+          url: 'http://localhost:7000/api/foos',
+          method: 'GET',
+          data: { id, page: 3 }
+        }
+      };
+    }
+
+    setTimeout(
+      () => {
+        expectToHaveMade('firstRequest');
+        expectToHaveMade('secondRequest');
+        expectToHaveMade('thirdRequest');
+
+        const actions = store.getState();
+        expect(actions).to.deep.equal([
+          { type: '@@redux/INIT' },
+          {
+            type: 'FIRST_FOO_REQUEST',
+            ajax: {
+              url: 'http://localhost:7000/api/foos',
+              method: 'GET',
+              data: { page: 1 }
+            }
+          },
+          {
+            type: 'FIRST_FOO_SUCCESS',
+            payload: { id: 'first-req-response' },
+            meta: {
+              ajax: {
+                url: 'http://localhost:7000/api/foos',
+                method: 'GET',
+                data: { page: 1 }
+              }
+            }
+          },
+          {
+            type: 'SECOND_FOO_REQUEST',
+            ajax: {
+              url: 'http://localhost:7000/api/foos',
+              method: 'GET',
+              data: { id: 'first-req-response', page: 2 }
+            }
+          },
+          {
+            type: 'SECOND_FOO_SUCCESS',
+            payload: { id: 'second-req-response' },
+            meta: {
+              ajax: {
+                url: 'http://localhost:7000/api/foos',
+                method: 'GET',
+                data: { id: 'first-req-response', page: 2 }
+              }
+            }
+          },
+          {
+            type: 'THIRD_FOO_REQUEST',
+            ajax: {
+              url: 'http://localhost:7000/api/foos',
+              method: 'GET',
+              data: { id: 'second-req-response', page: 3 }
+            }
+          },
+          {
+            type: 'THIRD_FOO_SUCCESS',
+            payload: { id: 'third-req-response' },
+            meta: {
+              ajax: {
+                url: 'http://localhost:7000/api/foos',
+                method: 'GET',
+                data: { id: 'second-req-response', page: 3 }
+              }
+            }
+          }
+        ]);
+        done();
+      },
+      30
     );
   });
 });

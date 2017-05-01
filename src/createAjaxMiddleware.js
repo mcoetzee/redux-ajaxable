@@ -6,8 +6,23 @@ export function createAjaxMiddleware(config) {
   const ajaxEpic = createAjaxEpic(config);
 
   return middlewareApi => next => {
-    ajaxEpic(action$).subscribe(middlewareApi.dispatch);
+    ajaxEpic(action$, middlewareApi).subscribe();
+
     return action => {
+      if (action.ajax && action.ajax.chain) {
+        const { chain } = action.ajax;
+        delete action.ajax.chain;
+
+        if (chain.length) {
+          action.ajax._onCompleteForFSAAToolsOnly = res => {
+            const nextAjaxAction = chain.shift()(res);
+            if (chain.length) {
+              nextAjaxAction.ajax.chain = chain;
+            }
+            middlewareApi.dispatch(nextAjaxAction);
+          };
+        }
+      }
       action$.next(action);
       return next(action);
     };

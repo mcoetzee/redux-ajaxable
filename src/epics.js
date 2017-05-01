@@ -5,8 +5,10 @@ import { groupBy } from 'rxjs/operator/groupBy';
 import { switchMap } from 'rxjs/operator/switchMap';
 import { mergeMap } from 'rxjs/operator/mergeMap';
 import 'rxjs/add/operator/catch';
+import 'rxjs/add/operator/do';
 import { retry } from 'rxjs/operator/retry';
 import { takeUntil } from 'rxjs/operator/takeUntil';
+import { ignoreElements } from 'rxjs/operator/ignoreElements';
 
 import { merge } from 'rxjs/observable/merge';
 import { of } from 'rxjs/observable/of';
@@ -32,7 +34,7 @@ export function createAjaxEpic(config) {
   return ajaxEpic;
 }
 
-function ajaxEpic(action$) {
+function ajaxEpic(action$, middlewareApi) {
   return action$
     ::filter(action => action.ajax)
     ::groupBy(action => {
@@ -49,91 +51,94 @@ function ajaxEpic(action$) {
           ::filter(action => getAjaxMetaProp(action, 'resolve') === 'LATEST')
           ::map(scrubAjaxActionOfImpurities)
           ::debounce(debounceIfTimeIsSet)
-          ::switchMap(({ action, callbacks }) => getAjaxResponse(action, callbacks, action$)),
+          ::switchMap(scrubbed =>
+            getAjaxResponse(scrubbed, action$, middlewareApi)
+          ),
         groupedAction$
           ::filter(action => getAjaxMetaProp(action, 'resolve') !== 'LATEST')
           ::map(scrubAjaxActionOfImpurities)
           ::debounce(debounceIfTimeIsSet)
-          ::mergeMap(({ action, callbacks }) => getAjaxResponse(action, callbacks, action$))
+          ::mergeMap(scrubbed =>
+            getAjaxResponse(scrubbed, action$, middlewareApi)
+          )
       );
     });
 }
 
 const completeKey = '_onCompleteForFSAAToolsOnly';
 const errorKey = '_onErrorForFSAAToolsOnly';
+
 function scrubAjaxActionOfImpurities(action) {
+  const { ajax } = action;
   const callbacks = {};
-  if (action.ajax.response) {
-    callbacks.response = action.ajax.response;
-    delete action.ajax.response;
+  if (ajax.response) {
+    callbacks.response = ajax.response;
+    delete ajax.response;
   }
-  if (action.ajax[completeKey]) {
-    callbacks.onComplete = action.ajax[completeKey];
-    delete action.ajax[completeKey];
+  if (ajax[completeKey]) {
+    callbacks.onComplete = ajax[completeKey];
+    delete ajax[completeKey];
   }
-  if (action.ajax[errorKey]) {
-    callbacks.onError = action.ajax[errorKey];
-    delete action.ajax[errorKey];
+  if (ajax[errorKey]) {
+    callbacks.onError = ajax[errorKey];
+    delete ajax[errorKey];
   }
   return { action, callbacks };
 }
 
-function debounceIfTimeIsSet({ action }) {
-  const debounceTime = getAjaxMetaProp(action, 'debounce');
+function debounceIfTimeIsSet(scrubbed) {
+  const debounceTime = getAjaxMetaProp(scrubbed.action, 'debounce');
   return debounceTime ? timer(debounceTime) : empty();
 }
 
-function getAjaxResponse(action, callbacks, action$) {
-  const { ajax } = action;
-  let response$ = ajaxObservable(getRequest(ajax));
+function getAjaxResponse(scrubbed, action$, middlewareApi) {
+  const { action, callbacks } = scrubbed;
+  let response$ = ajaxObservable(getRequest(action.ajax));
 
-  const retryCount = getMetaProp(ajax, 'retry');
+  const retryCount = getAjaxMetaProp(action, 'retry');
   if (retryCount) {
     response$ = response$::retry(retryCount);
   }
 
-  const cancelType = getMetaProp(ajax, 'cancelType');
+  const cancelType = getAjaxMetaProp(action, 'cancelType');
   if (cancelType) {
     response$ = response$::takeUntil(
       action$::filter(a => a.type === cancelType)
     );
   }
 
-  const prefix = ajaxConfig.requestSuffix
-    ? action.type.replace(new RegExp(ajaxConfig.requestSuffix + '$'), '')
-    : (action.type + '_');
-
-  const responseMeta = getResponseMetadata(action, ajax);
+  const responsePrefix = getResponseTypePrefix(action);
+  const responseMeta = getResponseMetadata(action);
 
   return response$
     ::map(({ response }) => {
-      const res = callbacks.response ? callbacks.response(response) : response;
-      if (callbacks.onComplete) {
-        callbacks.onComplete(res);
-      }
       return {
-        type: prefix + ajaxConfig.successSuffix,
-        payload: res,
+        type: responsePrefix + ajaxConfig.successSuffix,
+        payload: callbacks.response ? callbacks.response(response) : response,
         meta: responseMeta
       };
     })
     .catch(err => {
-      const res = { status: err.status };
-      if (callbacks.onError) {
-        callbacks.onError(res);
-      }
       return of({
-        type: prefix + ajaxConfig.failureSuffix,
+        type: responsePrefix + ajaxConfig.failureSuffix,
         error: true,
-        payload: res,
+        payload: { status: err.status },
         meta: responseMeta
       });
-    });
+    })
+    .do(responseAction => {
+      middlewareApi.dispatch(responseAction);
+      if (!responseAction.error && callbacks.onComplete) {
+        callbacks.onComplete(responseAction.payload);
+      }
+      if (responseAction.error && callbacks.onError) {
+        callbacks.onError(responseAction.payload);
+      }
+    })
+    ::ignoreElements();
 }
 
 function getRequest(ajax) {
-  ajax = isString(ajax) ? { url: ajax, method: 'GET' } : ajax;
-
   const request = {
     method: ajax.method,
     url: ajax.url,
@@ -164,8 +169,14 @@ function getRequest(ajax) {
   return request;
 }
 
-function getResponseMetadata(action, ajax) {
-  const responseMeta = { ajax };
+function getResponseTypePrefix(action) {
+  return ajaxConfig.requestSuffix
+    ? action.type.replace(new RegExp(ajaxConfig.requestSuffix + '$'), '')
+    : (action.type + '_');
+}
+
+function getResponseMetadata(action) {
+  const responseMeta = { ajax: action.ajax };
   if (action.payload) {
     responseMeta.payload = action.payload;
   }
@@ -173,13 +184,9 @@ function getResponseMetadata(action, ajax) {
 }
 
 function getAjaxMetaProp(action, prop) {
-  return action.ajax ? getMetaProp(action.ajax, prop) : undefined;
+  return getMetaProp(action.ajax, prop);
 }
 
 function getMetaProp(ajax, prop) {
   return ajax.meta ? ajax.meta[prop] : undefined;
-}
-
-function isString(data) {
-  return typeof data === 'string' || data instanceof String;
 }
