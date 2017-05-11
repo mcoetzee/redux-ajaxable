@@ -18,7 +18,7 @@ import { ajax as ajaxObservable } from 'rxjs/observable/dom/ajax';
 
 import stringify from 'qs/lib/stringify';
 
-let ajaxConfig;
+let config;
 let encodingConfig;
 const defaultConfig = {
   requestSuffix: 'REQUEST',
@@ -26,11 +26,13 @@ const defaultConfig = {
   failureSuffix: 'FAILURE',
   urlEncoder: stringify,
   arrayFormat: 'indices',
+  retries: {},
+  timeout: 0,
 };
 
-export function createAjaxEpic(config) {
-  ajaxConfig = config ? { ...defaultConfig, ...config } : defaultConfig;
-  encodingConfig = { arrayFormat: ajaxConfig.arrayFormat };
+export function createAjaxEpic(ajaxConfig) {
+  config = ajaxConfig ? { ...defaultConfig, ...ajaxConfig } : defaultConfig;
+  encodingConfig = { arrayFormat: config.arrayFormat };
   return ajaxEpic;
 }
 
@@ -95,7 +97,7 @@ function getAjaxResponse(scrubbed, action$, middlewareApi) {
   const { action, callbacks } = scrubbed;
   let response$ = ajaxObservable(getRequest(action.ajax));
 
-  const retryCount = getAjaxMetaProp(action, 'retry');
+  const retryCount = getRetryCount(action);
   if (retryCount) {
     response$ = response$::retry(retryCount);
   }
@@ -113,14 +115,14 @@ function getAjaxResponse(scrubbed, action$, middlewareApi) {
   return response$
     ::map(({ response }) => {
       return {
-        type: responsePrefix + ajaxConfig.successSuffix,
+        type: responsePrefix + config.successSuffix,
         payload: callbacks.response ? callbacks.response(response) : response,
         meta: responseMeta
       };
     })
     .catch(err => {
       return of({
-        type: responsePrefix + ajaxConfig.failureSuffix,
+        type: responsePrefix + config.failureSuffix,
         error: true,
         payload: { status: err.status },
         meta: responseMeta
@@ -128,10 +130,10 @@ function getAjaxResponse(scrubbed, action$, middlewareApi) {
     })
     .do(responseAction => {
       middlewareApi.dispatch(responseAction);
-      if (!responseAction.error && callbacks.onComplete) {
+      if (callbacks.onComplete && !responseAction.error) {
         callbacks.onComplete(responseAction.payload);
       }
-      if (responseAction.error && callbacks.onError) {
+      if (callbacks.onError && responseAction.error) {
         callbacks.onError(responseAction.payload);
       }
     })
@@ -143,16 +145,16 @@ function getRequest(ajax) {
     method: ajax.method,
     url: ajax.url,
     headers: ajax.headers ? { ...ajax.headers } : {},
-    timeout: getMetaProp(ajax, 'timeout') || 0,
+    timeout: getMetaProp(ajax, 'timeout') || config.timeout,
     responseType: ajax.responseType || 'json',
-    crossDomain: ajax.crossDomain || false,
-    withCredentials: ajax.withCredentials || false,
+    crossDomain: ajax.crossDomain,
+    withCredentials: ajax.withCredentials,
   };
 
   if (request.method !== 'GET') {
     request.body = ajax.data;
   } else if (ajax.data) {
-    request.url += '?' + ajaxConfig.urlEncoder(ajax.data, encodingConfig);
+    request.url += '?' + config.urlEncoder(ajax.data, encodingConfig);
   }
 
   if (!request.headers['Content-Type']) {
@@ -169,9 +171,14 @@ function getRequest(ajax) {
   return request;
 }
 
+function getRetryCount(action) {
+  let count = getAjaxMetaProp(action, 'retries');
+  return count || config.retries[action.ajax.method];
+}
+
 function getResponseTypePrefix(action) {
-  return ajaxConfig.requestSuffix
-    ? action.type.replace(new RegExp(ajaxConfig.requestSuffix + '$'), '')
+  return config.requestSuffix
+    ? action.type.replace(new RegExp(config.requestSuffix + '$'), '')
     : (action.type + '_');
 }
 
